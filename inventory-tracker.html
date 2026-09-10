@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stockline — Inventory Tracker</title>
+<style>
+  :root{
+    --paper:#F7F7F5;
+    --panel:#FFFFFF;
+    --ink:#1C1F1E;
+    --ink-soft:#5B6260;
+    --border:#E1DFDA;
+    --primary:#2B4C6F;
+    --primary-dark:#1F3A56;
+    --success:#3A7D5C;
+    --success-bg:#E7F1EC;
+    --warning:#B26A1F;
+    --warning-bg:#FBEEDE;
+    --danger:#B4432F;
+    --danger-bg:#FBE7E3;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:14px;
+    line-height:1.45;
+  }
+  .app{max-width:1180px;margin:0 auto;padding:24px 20px 60px;}
+
+  .topbar{
+    display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    padding-bottom:18px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap;
+  }
+  .topbar h1{font-size:20px;font-weight:700;margin:0;letter-spacing:-0.01em;}
+  .topbar .sub{color:var(--ink-soft);font-size:13px;margin-top:2px;}
+  .sync{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft);white-space:nowrap;}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--success);flex:none;}
+  .dot.saving{background:var(--warning);}
+
+  .layout{display:grid;grid-template-columns:1fr 320px;gap:22px;align-items:start;}
+  @media (max-width:860px){
+    .layout{grid-template-columns:1fr;}
+    .side{order:-1;}
+  }
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:6px;}
+
+  .main-card{padding:18px;}
+  .main-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
+  .main-head h2{font-size:15px;margin:0;font-weight:700;}
+  .counts{font-size:12.5px;color:var(--ink-soft);}
+  .filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  input,select{font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:5px;background:var(--paper);color:var(--ink);}
+  input:focus,select:focus,button:focus{outline:2px solid var(--primary);outline-offset:1px;}
+  .filters input[type="search"]{flex:1;min-width:140px;}
+
+  .table-scroll{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;min-width:740px;}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  th{font-size:11.5px;color:var(--ink-soft);font-weight:600;cursor:pointer;user-select:none;}
+  th.active{color:var(--ink);}
+  td.qty, th.qty-col{font-variant-numeric:tabular-nums;text-align:right;}
+  td.name{white-space:normal;min-width:160px;}
+  .sku{color:var(--ink-soft);font-size:12px;}
+
+  .badge{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11.5px;font-weight:600;}
+  .badge.in{background:var(--success-bg);color:var(--success);}
+  .badge.low{background:var(--warning-bg);color:var(--warning);}
+  .badge.out{background:var(--danger-bg);color:var(--danger);}
+
+  .empty{padding:40px 10px;text-align:center;color:var(--ink-soft);}
+  .empty strong{color:var(--ink);display:block;margin-bottom:4px;font-size:14px;}
+
+  .banner{
+    display:flex;align-items:flex-start;gap:10px;
+    background:var(--warning-bg);border:1px solid #EBD3AE;color:#7A4C13;
+    border-radius:5px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;
+  }
+  .banner.danger-tone{background:var(--danger-bg);border-color:#EFC3B8;color:#7C2E1C;}
+  .banner .dot{margin-top:5px;background:var(--warning);}
+  .banner.danger-tone .dot{background:var(--danger);}
+  .banner strong{font-weight:700;}
+  .banner .items{color:inherit;opacity:.85;}
+
+  .loc-tag{color:var(--ink-soft);font-size:12px;}
+
+  .side{display:flex;flex-direction:column;gap:16px;position:sticky;top:20px;}
+  .side .card{padding:16px;}
+  .side h3{font-size:13.5px;margin:0 0 12px;font-weight:700;}
+  label{display:block;font-size:12px;color:var(--ink-soft);margin:10px 0 4px;}
+  label:first-of-type{margin-top:0;}
+  input[type="text"],input[type="number"],select{width:100%;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .field-error{color:var(--danger);font-size:12px;margin-top:4px;min-height:16px;}
+
+  button{font:inherit;font-weight:600;padding:9px 14px;border-radius:5px;border:none;cursor:pointer;}
+  button.primary{background:var(--primary);color:#fff;width:100%;margin-top:12px;}
+  button.primary:hover{background:var(--primary-dark);}
+  .delta-row{display:flex;gap:8px;margin-top:10px;}
+  .delta-row button{flex:none;width:38px;background:var(--paper);border:1px solid var(--border);color:var(--ink);}
+  .delta-row input{text-align:center;font-variant-numeric:tabular-nums;}
+
+  .log-card{padding:16px;}
+  .log-card h3{font-size:13.5px;margin:0 0 10px;font-weight:700;}
+  .log-list{max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;}
+  .log-item{font-size:12.5px;border-left:2px solid var(--border);padding-left:10px;}
+  .log-item .who{font-weight:600;}
+  .log-item .meta{color:var(--ink-soft);font-size:11.5px;margin-top:1px;}
+  .log-empty{color:var(--ink-soft);font-size:12.5px;}
+
+  .reset-link{background:none;border:none;color:var(--ink-soft);font-size:12px;text-decoration:underline;padding:0;margin-top:4px;width:auto;font-weight:400;}
+  .log-actions{display:flex;justify-content:space-between;align-items:center;margin-top:10px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div>
+      <h1>Stockline</h1>
+      <div class="sub">Real-time inventory tracker — demo build</div>
+    </div>
+    <div class="sync"><span class="dot" id="syncDot"></span><span id="syncText">Synced</span></div>
+  </div>
+
+  <div class="layout">
+
+    <div class="card main-card">
+      <div class="main-head">
+        <h2>Current stock</h2>
+        <span class="counts" id="counts"></span>
+      </div>
+      <div id="lowStockBanner"></div>
+      <div class="filters">
+        <input type="search" id="search" placeholder="Search by name or SKU…">
+        <select id="categoryFilter"><option value="">All categories</option></select>
+        <select id="locationFilter"><option value="">All locations</option></select>
+      </div>
+      <div class="table-scroll">
+        <table id="stockTable">
+          <thead>
+            <tr>
+              <th data-key="name">Item</th>
+              <th data-key="category">Category</th>
+              <th data-key="location">Location</th>
+              <th data-key="quantity" class="qty-col">Qty</th>
+              <th data-key="reorderThreshold" class="qty-col">Reorder at</th>
+              <th data-key="status">Status</th>
+              <th data-key="updatedAt">Updated</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+        <div class="empty" id="emptyState" style="display:none;">
+          <strong>No items yet</strong>
+          Add your first item using the panel on the right.
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+
+      <div class="card">
+        <h3>Add item</h3>
+        <form id="addForm">
+          <label for="addName">Item name</label>
+          <input type="text" id="addName" required>
+
+          <div class="row2">
+            <div>
+              <label for="addSku">SKU</label>
+              <input type="text" id="addSku" required>
+            </div>
+            <div>
+              <label for="addCategory">Category</label>
+              <input type="text" id="addCategory" placeholder="e.g. Beverages" required>
+            </div>
+          </div>
+
+          <label for="addLocation">Location</label>
+          <input type="text" id="addLocation" placeholder="e.g. Downtown" required>
+
+          <div class="row2">
+            <div>
+              <label for="addQty">Starting qty</label>
+              <input type="number" id="addQty" min="0" required>
+            </div>
+            <div>
+              <label for="addThreshold">Reorder at</label>
+              <input type="number" id="addThreshold" min="0" required>
+            </div>
+          </div>
+
+          <div class="field-error" id="addError"></div>
+          <button type="submit" class="primary">Add item</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Update stock</h3>
+        <form id="updateForm">
+          <label for="updateItem">Item</label>
+          <select id="updateItem" required></select>
+
+          <label for="updateReason">Reason</label>
+          <select id="updateReason" required>
+            <option value="Restock">Restock</option>
+            <option value="Sale">Sale</option>
+            <option value="Correction">Correction</option>
+            <option value="Damage">Damage</option>
+          </select>
+
+          <label for="updateDelta">Change in quantity</label>
+          <div class="delta-row">
+            <button type="button" id="decBtn">−</button>
+            <input type="number" id="updateDelta" value="1">
+            <button type="button" id="incBtn">+</button>
+          </div>
+
+          <div class="field-error" id="updateError"></div>
+          <button type="submit" class="primary">Apply update</button>
+        </form>
+      </div>
+
+      <div class="card log-card">
+        <h3>Activity log</h3>
+        <div class="log-list" id="logList"></div>
+        <div class="log-empty" id="logEmpty" style="display:none;">No changes logged yet.</div>
+        <div class="log-actions">
+          <button class="reset-link" id="exportBtn" type="button">Export log as CSV</button>
+          <button class="reset-link" id="resetBtn" type="button">Reset demo data</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- State ----------
+  var items = [];          // {id, name, sku, category, quantity, reorderThreshold, updatedAt}
+  var log = [];            // {text, meta, ts}
+  var sortKey = "name";
+  var sortDir = 1;
+  var storageOk = true;
+
+  var STORAGE_KEY = "stockline-state";
+
+  // ---------- Seed data (used only if no saved state exists) ----------
+  function seedData(){
+    var now = Date.now();
+    items = [
+      mkItem("Espresso Beans 1kg","BEV-1001","Beverages","Downtown",42,15,now),
+      mkItem("Oat Milk 1L","BEV-1002","Beverages","Downtown",6,10,now),
+      mkItem("Paper Cups (100pk)","SUP-2001","Supplies","Downtown",0,20,now),
+      mkItem("Almond Croissant","BAK-3001","Bakery","Uptown",18,8,now),
+      mkItem("Chai Concentrate","BEV-1003","Beverages","Uptown",11,10,now),
+      mkItem("Espresso Beans 1kg","BEV-1001-W","Beverages","Warehouse",4,25,now)
+    ];
+    log = [];
+  }
+  function mkItem(name,sku,category,location,qty,threshold,ts){
+    return { id: sku, name: name, sku: sku, category: category, location: location,
+      quantity: qty, reorderThreshold: threshold, updatedAt: ts };
+  }
+
+  // ---------- Persistence ----------
+  function setSyncState(saving){
+    var dot = document.getElementById("syncDot");
+    var text = document.getElementById("syncText");
+    if(saving){ dot.classList.add("saving"); text.textContent = "Saving…"; }
+    else { dot.classList.remove("saving"); text.textContent = storageOk ? "Synced" : "Not saved (session only)"; }
+  }
+
+  async function loadState(){
+    try{
+      var res = await window.storage.get(STORAGE_KEY, false);
+      if(res && res.value){
+        var parsed = JSON.parse(res.value);
+        items = parsed.items || [];
+        log = parsed.log || [];
+        if(items.length === 0 && log.length === 0){ seedData(); }
+      } else {
+        seedData();
+      }
+    } catch(e){
+      seedData(); // key not found or storage unavailable — seed in memory
+    }
+  }
+
+  async function saveState(){
+    setSyncState(true);
+    try{
+      var result = await window.storage.set(STORAGE_KEY, JSON.stringify({items:items, log:log}), false);
+      storageOk = !!result;
+    } catch(e){
+      storageOk = false;
+    }
+    setSyncState(false);
+  }
+
+  // ---------- Derived status ----------
+  function statusOf(item){
+    if(item.quantity === 0) return {label:"Out of Stock", cls:"out"};
+    if(item.quantity <= item.reorderThreshold) return {label:"Low Stock", cls:"low"};
+    return {label:"In Stock", cls:"in"};
+  }
+
+  function fmtTime(ts){
+    var d = new Date(ts);
+    var now = new Date();
+    var sameDay = d.toDateString() === now.toDateString();
+    var time = d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    return sameDay ? time : d.toLocaleDateString() + " " + time;
+  }
+
+  // ---------- Rendering ----------
+  function populateCategoryFilter(){
+    var sel = document.getElementById("categoryFilter");
+    var current = sel.value;
+    var cats = Array.from(new Set(items.map(function(i){return i.category;}))).sort();
+    sel.innerHTML = '<option value="">All categories</option>' +
+      cats.map(function(c){return '<option value="'+escapeAttr(c)+'">'+escapeHtml(c)+'</option>';}).join("");
+    sel.value = cats.indexOf(current) >= 0 ? current : "";
+  }
+
+  function populateLocationFilter(){
+    var sel = document.getElementById("locationFilter");
+    var current = sel.value;
+    var locs = Array.from(new Set(items.map(function(i){return i.location;}))).sort();
+    sel.innerHTML = '<option value="">All locations</option>' +
+      locs.map(function(l){return '<option value="'+escapeAttr(l)+'">'+escapeHtml(l)+'</option>';}).join("");
+    sel.value = locs.indexOf(current) >= 0 ? current : "";
+  }
+
+  function populateUpdateSelect(){
+    var sel = document.getElementById("updateItem");
+    var current = sel.value;
+    sel.innerHTML = items.map(function(i){
+      return '<option value="'+escapeAttr(i.id)+'">'+escapeHtml(i.name)+' ('+escapeHtml(i.sku)+') · '+escapeHtml(i.location)+'</option>';
+    }).join("");
+    if(items.some(function(i){return i.id === current;})) sel.value = current;
+  }
+
+  function getFiltered(){
+    var q = document.getElementById("search").value.trim().toLowerCase();
+    var cat = document.getElementById("categoryFilter").value;
+    var loc = document.getElementById("locationFilter").value;
+    var list = items.filter(function(i){
+      var matchQ = !q || i.name.toLowerCase().indexOf(q) >= 0 || i.sku.toLowerCase().indexOf(q) >= 0;
+      var matchC = !cat || i.category === cat;
+      var matchL = !loc || i.location === loc;
+      return matchQ && matchC && matchL;
+    });
+    list.sort(function(a,b){
+      var av = a[sortKey], bv = b[sortKey];
+      if(sortKey === "status"){ av = statusOf(a).label; bv = statusOf(b).label; }
+      if(typeof av === "string"){ av = av.toLowerCase(); bv = bv.toLowerCase(); }
+      if(av < bv) return -1*sortDir;
+      if(av > bv) return 1*sortDir;
+      return 0;
+    });
+    return list;
+  }
+
+  function renderTable(){
+    var body = document.getElementById("tableBody");
+    var list = getFiltered();
+    document.getElementById("emptyState").style.display = items.length === 0 ? "block" : "none";
+    document.getElementById("stockTable").style.display = items.length === 0 ? "none" : "table";
+    document.getElementById("counts").textContent = list.length + " of " + items.length + " items shown";
+
+    body.innerHTML = list.map(function(item){
+      var st = statusOf(item);
+      return "<tr>" +
+        "<td class='name'>"+escapeHtml(item.name)+"<div class='sku'>"+escapeHtml(item.sku)+"</div></td>" +
+        "<td>"+escapeHtml(item.category)+"</td>" +
+        "<td class='loc-tag'>"+escapeHtml(item.location)+"</td>" +
+        "<td class='qty'>"+item.quantity+"</td>" +
+        "<td class='qty'>"+item.reorderThreshold+"</td>" +
+        "<td><span class='badge "+st.cls+"'>"+st.label+"</span></td>" +
+        "<td>"+fmtTime(item.updatedAt)+"</td>" +
+      "</tr>";
+    }).join("");
+
+    document.querySelectorAll("th[data-key]").forEach(function(th){
+      th.classList.toggle("active", th.getAttribute("data-key") === sortKey);
+    });
+  }
+
+  function renderLog(){
+    var list = document.getElementById("logList");
+    var empty = document.getElementById("logEmpty");
+    empty.style.display = log.length === 0 ? "block" : "none";
+    list.innerHTML = log.slice(0,50).map(function(entry){
+      return "<div class='log-item'><span class='who'>"+escapeHtml(entry.text)+"</span>" +
+        "<div class='meta'>"+escapeHtml(entry.meta)+" · "+fmtTime(entry.ts)+"</div></div>";
+    }).join("");
+  }
+
+  function renderBanner(){
+    var el = document.getElementById("lowStockBanner");
+    var out = items.filter(function(i){ return i.quantity === 0; });
+    var low = items.filter(function(i){ return i.quantity > 0 && i.quantity <= i.reorderThreshold; });
+
+    if(out.length === 0 && low.length === 0){
+      el.innerHTML = "";
+      return;
+    }
+    var tone = out.length > 0 ? "danger-tone" : "";
+    var parts = [];
+    if(out.length > 0){
+      parts.push(out.length + " out of stock (" + out.map(function(i){return i.name+" · "+i.location;}).join(", ") + ")");
+    }
+    if(low.length > 0){
+      parts.push(low.length + " low on stock (" + low.map(function(i){return i.name+" · "+i.location;}).join(", ") + ")");
+    }
+    el.innerHTML = "<div class='banner "+tone+"'><span class='dot'></span>" +
+      "<div><strong>Reorder needed across locations.</strong> <span class='items'>" + escapeHtml(parts.join(" — ")) + "</span></div></div>";
+  }
+
+  function renderAll(){
+    populateCategoryFilter();
+    populateLocationFilter();
+    populateUpdateSelect();
+    renderTable();
+    renderLog();
+    renderBanner();
+  }
+
+  // ---------- Helpers ----------
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+  function escapeAttr(s){ return escapeHtml(s); }
+
+  function addLog(text, meta){
+    log.unshift({text:text, meta:meta, ts:Date.now()});
+  }
+
+  // ---------- Actions ----------
+  async function handleAddItem(e){
+    e.preventDefault();
+    var errEl = document.getElementById("addError");
+    errEl.textContent = "";
+
+    var name = document.getElementById("addName").value.trim();
+    var sku = document.getElementById("addSku").value.trim();
+    var category = document.getElementById("addCategory").value.trim();
+    var location = document.getElementById("addLocation").value.trim();
+    var qty = Number(document.getElementById("addQty").value);
+    var threshold = Number(document.getElementById("addThreshold").value);
+
+    if(!name || !sku || !category || !location){
+      errEl.textContent = "Name, SKU, category, and location are required.";
+      return;
+    }
+    if(isNaN(qty) || qty < 0 || isNaN(threshold) || threshold < 0){
+      errEl.textContent = "Quantity and reorder threshold must be zero or more.";
+      return;
+    }
+    if(items.some(function(i){ return i.sku.toLowerCase() === sku.toLowerCase(); })){
+      errEl.textContent = "That SKU already exists — use a unique SKU.";
+      return;
+    }
+
+    var item = mkItem(name, sku, category, location, qty, threshold, Date.now());
+    items.push(item);
+    addLog("Added " + name, "New item · " + location + " · qty " + qty);
+    document.getElementById("addForm").reset();
+    renderAll();
+    await saveState();
+  }
+
+  async function handleUpdateStock(e){
+    e.preventDefault();
+    var errEl = document.getElementById("updateError");
+    errEl.textContent = "";
+
+    var id = document.getElementById("updateItem").value;
+    var reason = document.getElementById("updateReason").value;
+    var delta = Number(document.getElementById("updateDelta").value);
+
+    var item = items.find(function(i){ return i.id === id; });
+    if(!item){
+      errEl.textContent = "Select an item to update.";
+      return;
+    }
+    if(isNaN(delta) || delta === 0){
+      errEl.textContent = "Enter a non-zero quantity change.";
+      return;
+    }
+
+    var before = item.quantity;
+    item.quantity = Math.max(0, item.quantity + delta);
+    item.updatedAt = Date.now();
+
+    var actual = item.quantity - before;
+    var sign = actual > 0 ? "+" : "";
+    addLog(item.name + " " + sign + actual, reason + " · now " + item.quantity);
+
+    renderAll();
+    await saveState();
+  }
+
+  function handleExportCsv(){
+    if(log.length === 0){ alert("No activity to export yet."); return; }
+    var header = ["Timestamp","Event","Detail"];
+    var rows = log.map(function(entry){
+      return [new Date(entry.ts).toISOString(), entry.text, entry.meta];
+    });
+    var csv = [header].concat(rows).map(function(row){
+      return row.map(function(cell){
+        var v = String(cell).replace(/"/g,'""');
+        return '"' + v + '"';
+      }).join(",");
+    }).join("\r\n");
+
+    var blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "stockline-activity-log.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleReset(){
+    if(!confirm("Reset the demo back to its starting data? This clears your changes.")) return;
+    seedData();
+    renderAll();
+    await saveState();
+  }
+
+  // ---------- Wiring ----------
+  document.getElementById("addForm").addEventListener("submit", handleAddItem);
+  document.getElementById("updateForm").addEventListener("submit", handleUpdateStock);
+  document.getElementById("search").addEventListener("input", renderTable);
+  document.getElementById("categoryFilter").addEventListener("change", renderTable);
+  document.getElementById("locationFilter").addEventListener("change", renderTable);
+  document.getElementById("resetBtn").addEventListener("click", handleReset);
+  document.getElementById("exportBtn").addEventListener("click", handleExportCsv);
+  document.getElementById("incBtn").addEventListener("click", function(){
+    var f = document.getElementById("updateDelta");
+    f.value = Number(f.value || 0) + 1;
+  });
+  document.getElementById("decBtn").addEventListener("click", function(){
+    var f = document.getElementById("updateDelta");
+    f.value = Number(f.value || 0) - 1;
+  });
+  document.querySelectorAll("th[data-key]").forEach(function(th){
+    th.addEventListener("click", function(){
+      var key = th.getAttribute("data-key");
+      if(sortKey === key){ sortDir *= -1; } else { sortKey = key; sortDir = 1; }
+      renderTable();
+    });
+  });
+
+  // ---------- Init ----------
+  (async function init(){
+    setSyncState(true);
+    await loadState();
+    renderAll();
+    setSyncState(false);
+  })();
+
+})();
+</script>
+</body>
+</html>
