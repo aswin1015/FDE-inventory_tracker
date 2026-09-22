@@ -114,6 +114,32 @@
 
   .reset-link{background:none;border:none;color:var(--ink-soft);font-size:12px;text-decoration:underline;padding:0;margin-top:4px;width:auto;font-weight:400;}
   .log-actions{display:flex;justify-content:space-between;align-items:center;margin-top:10px;}
+
+  .mismatch-flag{background:none;border:1px solid var(--danger);color:var(--danger);border-radius:4px;font-size:11px;font-weight:600;padding:2px 7px;cursor:pointer;white-space:nowrap;}
+  .mismatch-flag:hover{background:var(--danger-bg);}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(20,22,21,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:50;}
+  .modal-backdrop.hidden{display:none;}
+  .modal{background:var(--panel);border-radius:8px;max-width:640px;width:100%;padding:22px 24px 26px;box-shadow:0 12px 40px rgba(0,0,0,.25);}
+  .modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px;}
+  .modal-head h3{margin:0;font-size:16px;}
+  .modal-close{background:none;border:none;font-size:18px;line-height:1;color:var(--ink-soft);cursor:pointer;padding:2px 4px;}
+  .modal-caption{color:var(--ink-soft);font-size:11.5px;font-style:italic;margin-bottom:16px;}
+
+  .pipeline{display:flex;flex-direction:column;gap:8px;}
+  .stage{border:1px solid var(--border);border-radius:6px;padding:10px 12px;opacity:.35;transition:opacity .25s ease, background .25s ease;}
+  .stage.active{opacity:1;background:var(--paper);}
+  .stage.done{opacity:1;}
+  .stage-row{display:flex;align-items:center;gap:8px;}
+  .stage-dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex:none;}
+  .stage.active .stage-dot{background:var(--warning);}
+  .stage.done .stage-dot{background:var(--success);}
+  .stage-name{font-weight:700;font-size:12.5px;}
+  .stage-body{font-size:12.5px;color:var(--ink-soft);margin:6px 0 0 16px;white-space:pre-line;}
+  .stage.branch-group{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border:none;padding:0;background:none;}
+  .stage.branch-group .stage{margin:0;}
+
+  .solution-box{margin-top:4px;background:var(--success-bg);border:1px solid #BFE0CE;color:var(--success);border-radius:6px;padding:10px 12px;font-size:12.5px;font-weight:600;}
 </style>
 </head>
 <body>
@@ -151,6 +177,7 @@
               <th data-key="reorderThreshold" class="qty-col">Reorder at</th>
               <th data-key="status">Status</th>
               <th data-key="updatedAt">Updated</th>
+              <th>Data check</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -240,6 +267,17 @@
   </div>
 </div>
 
+<div class="modal-backdrop hidden" id="investigateModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="investigateTitle">Investigating discrepancy</h3>
+      <button class="modal-close" id="investigateClose" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="modal-caption">Simulated pipeline — rule-based output for demo purposes, no live LLM calls.</div>
+    <div class="pipeline" id="pipelineStages"></div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -257,18 +295,31 @@
   function seedData(){
     var now = Date.now();
     items = [
-      mkItem("Espresso Beans 1kg","BEV-1001","Beverages","Downtown",42,15,now),
-      mkItem("Oat Milk 1L","BEV-1002","Beverages","Downtown",6,10,now),
-      mkItem("Paper Cups (100pk)","SUP-2001","Supplies","Downtown",0,20,now),
-      mkItem("Almond Croissant","BAK-3001","Bakery","Uptown",18,8,now),
-      mkItem("Chai Concentrate","BEV-1003","Beverages","Uptown",11,10,now),
-      mkItem("Espresso Beans 1kg","BEV-1001-W","Beverages","Warehouse",4,25,now)
+      // name, sku, category, location, wmsQty, threshold, posQty, pendingReturns
+      mkItem("Espresso Beans 1kg","BEV-1001","Beverages","Downtown",42,15,42,0,now),
+      mkItem("Oat Milk 1L","BEV-1002","Beverages","Downtown",6,10,9,3,now),
+      mkItem("Paper Cups (100pk)","SUP-2001","Supplies","Downtown",0,20,0,0,now),
+      mkItem("Almond Croissant","BAK-3001","Bakery","Uptown",18,8,18,0,now),
+      mkItem("Chai Concentrate","BEV-1003","Beverages","Uptown",11,10,15,0,now),
+      mkItem("Espresso Beans 1kg","BEV-1001-W","Beverages","Warehouse",4,25,4,0,now)
     ];
     log = [];
   }
-  function mkItem(name,sku,category,location,qty,threshold,ts){
+  function mkItem(name,sku,category,location,qty,threshold,posQty,pendingReturns,ts){
     return { id: sku, name: name, sku: sku, category: category, location: location,
-      quantity: qty, reorderThreshold: threshold, updatedAt: ts };
+      quantity: qty, reorderThreshold: threshold,
+      posQty: (posQty===undefined ? qty : posQty),
+      pendingReturns: (pendingReturns||0),
+      updatedAt: ts };
+  }
+
+  // ---------- Data-check (POS vs WMS vs Returns reconciliation) ----------
+  function reconcileGap(item){
+    // expected: POS on-hand count should equal WMS shelf count + returns not yet put back
+    return item.posQty - (item.quantity + item.pendingReturns);
+  }
+  function isMismatched(item){
+    return reconcileGap(item) !== 0;
   }
 
   // ---------- Persistence ----------
@@ -379,6 +430,10 @@
 
     body.innerHTML = list.map(function(item){
       var st = statusOf(item);
+      var mismatched = isMismatched(item);
+      var checkCell = mismatched
+        ? "<button type='button' class='mismatch-flag' data-investigate='"+escapeAttr(item.id)+"'>⚠ Investigate</button>"
+        : "<span class='loc-tag'>✓ matched</span>";
       return "<tr>" +
         "<td class='name'>"+escapeHtml(item.name)+"<div class='sku'>"+escapeHtml(item.sku)+"</div></td>" +
         "<td>"+escapeHtml(item.category)+"</td>" +
@@ -387,8 +442,15 @@
         "<td class='qty'>"+item.reorderThreshold+"</td>" +
         "<td><span class='badge "+st.cls+"'>"+st.label+"</span></td>" +
         "<td>"+fmtTime(item.updatedAt)+"</td>" +
+        "<td>"+checkCell+"</td>" +
       "</tr>";
     }).join("");
+
+    body.querySelectorAll("[data-investigate]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        openInvestigation(btn.getAttribute("data-investigate"));
+      });
+    });
 
     document.querySelectorAll("th[data-key]").forEach(function(th){
       th.classList.toggle("active", th.getAttribute("data-key") === sortKey);
@@ -536,6 +598,92 @@
     URL.revokeObjectURL(url);
   }
 
+  // ---------- Dummy multi-agent investigation pipeline (simulated, no live LLM calls) ----------
+  // Static mock "RAG layer": SOPs / incident history the Root Cause Investigator draws from.
+  var RAG_SNIPPETS = [
+    { tag:"returns", text:"SOP 4.2 — Returns are batched and reconciled into WMS every 2 hours; gaps matching pending-return volume are expected until the next batch." },
+    { tag:"returns", text:"Incident #1187 (Aug) — Downtown location, same pattern: POS/WMS gap matched pending returns exactly, resolved automatically after the next reconciliation batch." },
+    { tag:"unexplained", text:"SOP 6.1 — Any POS/WMS gap not explained by pending returns should be treated as a potential missed-scan or sync-job failure and queued for manual recount." },
+    { tag:"unexplained", text:"Incident #954 (Jun) — Uptown location, unexplained gap traced to a stalled overnight sync job between POS and WMS." }
+  ];
+
+  var pipelineTimers = [];
+
+  function clearPipelineTimers(){
+    pipelineTimers.forEach(function(t){ clearTimeout(t); });
+    pipelineTimers = [];
+  }
+
+  function openInvestigation(itemId){
+    var item = items.find(function(i){ return i.id === itemId; });
+    if(!item) return;
+
+    var gap = reconcileGap(item);
+    var explainedByReturns = item.pendingReturns > 0 && Math.abs(gap) <= item.pendingReturns;
+    var ragTag = explainedByReturns ? "returns" : "unexplained";
+    var ragMatches = RAG_SNIPPETS.filter(function(s){ return s.tag === ragTag; });
+
+    var stages = [
+      { name:"Supervisor Agent", body:
+        "Plan • Delegate • Synthesize\nInvestigating discrepancy for "+item.name+" at "+item.location+"." },
+      { name:"System Mapper", body:
+        "Systems touching this SKU: POS (sales), WMS (shelf count), Returns (pending intake)." },
+      { name:"Data Auditor", body:
+        "POS on-hand: "+item.posQty+"\nWMS shelf count: "+item.quantity+"\nPending returns: "+item.pendingReturns+"\nGap: "+gap+" unit(s)." },
+      { name:"Stakeholder Synthesizer", body:
+        gap === 0
+          ? "No gap to explain — systems agree for this item."
+          : "This looks like a "+Math.abs(gap)+"-unit gap"+(explainedByReturns ? " that hasn't hit the shelf count yet." : " that isn't accounted for by pending returns.") },
+      { name:"Root Cause Investigator (RAG-backed)", body:
+        ragMatches.map(function(s){ return "• "+s.text; }).join("\n") + "\n\n" +
+        (explainedByReturns
+          ? "Root cause: gap matches pending-returns volume — timing lag, not a data error."
+          : "Root cause: gap does not match pending returns — likely a sync/scan failure, not simple timing.") },
+      { name:"Solution Architect", body:
+        explainedByReturns
+          ? "Thin slice: no fix needed — trigger the routine returns-reconciliation job and re-check after the next batch."
+          : "Thin slice: flag SKU for manual recount and check the POS↔WMS sync job logs for this location." }
+    ];
+
+    document.getElementById("investigateTitle").textContent = "Investigating: " + item.name + " · " + item.location;
+    var container = document.getElementById("pipelineStages");
+    container.innerHTML = stages.map(function(s, idx){
+      return "<div class='stage' id='stage-"+idx+"'>" +
+        "<div class='stage-row'><span class='stage-dot'></span><span class='stage-name'>"+escapeHtml(s.name)+"</span></div>" +
+        "<div class='stage-body'></div>" +
+      "</div>";
+    }).join("");
+
+    document.getElementById("investigateModal").classList.remove("hidden");
+
+    clearPipelineTimers();
+    stages.forEach(function(s, idx){
+      var t = setTimeout(function(){
+        var el = document.getElementById("stage-"+idx);
+        if(!el) return;
+        if(idx > 0){
+          var prev = document.getElementById("stage-"+(idx-1));
+          if(prev) prev.classList.replace("active","done");
+        }
+        el.classList.add("active");
+        var isLast = idx === stages.length - 1;
+        var bodyEl = el.querySelector(".stage-body");
+        if(isLast && s.name === "Solution Architect"){
+          bodyEl.innerHTML = "<div class='solution-box'>"+escapeHtml(s.body)+"</div>";
+        } else {
+          bodyEl.textContent = s.body;
+        }
+        if(isLast){ el.classList.replace("active","done"); }
+      }, idx * 650);
+      pipelineTimers.push(t);
+    });
+  }
+
+  function closeInvestigation(){
+    clearPipelineTimers();
+    document.getElementById("investigateModal").classList.add("hidden");
+  }
+
   async function handleReset(){
     if(!confirm("Reset the demo back to its starting data? This clears your changes.")) return;
     seedData();
@@ -551,6 +699,10 @@
   document.getElementById("locationFilter").addEventListener("change", renderTable);
   document.getElementById("resetBtn").addEventListener("click", handleReset);
   document.getElementById("exportBtn").addEventListener("click", handleExportCsv);
+  document.getElementById("investigateClose").addEventListener("click", closeInvestigation);
+  document.getElementById("investigateModal").addEventListener("click", function(e){
+    if(e.target.id === "investigateModal") closeInvestigation();
+  });
   document.getElementById("incBtn").addEventListener("click", function(){
     var f = document.getElementById("updateDelta");
     f.value = Number(f.value || 0) + 1;
