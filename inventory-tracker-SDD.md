@@ -135,3 +135,31 @@ Client feedback after the v1 demo asked for three additions. Folding them into t
 - `location` is a required string field on each item (same free-text pattern as `category` — no fixed location list, since the client hasn't confirmed their store list yet).
 - The low-stock banner is derived at render time from the full `items` array (not the filtered view), so it always reflects the true cross-location picture even while the table is filtered down to one location.
 - CSV export builds the file client-side via `Blob` + an object URL — no server round-trip, consistent with the demo's no-backend constraint.
+
+---
+
+## 8. Amendment (v1.2) — Dummy multi-agent discrepancy investigation
+
+**Why this exists**
+The client's real problem statement is: *"Store managers manually count stock and head office manually reconciles data from different systems because the numbers don't match."* The first hypothesis to validate is not "build an AI agent" — it's "identify where the mismatch actually originates." Before any real agent investment, we prototyped what an agentic root-cause investigation *would* look like, as a fully deterministic, non-AI dummy — so the client can react to the interaction pattern without committing to (or paying for) real LLM infrastructure.
+
+**Updated user story**
+- **US-10**: As a head-office analyst, I want to see, for any item where system counts disagree, a step-by-step investigation of *why* — which systems are involved, what each one reports, and a recommended next action — so I can judge whether an automated investigation workflow would actually save reconciliation effort, before we build one for real.
+
+**Updated data model**
+- Each item now carries three source-of-record fields instead of one trusted quantity:
+  - `quantity` — WMS/shelf count (treated as physical source of truth; unchanged meaning from v1, still drives status badges).
+  - `posQty` — what POS believes is on hand.
+  - `pendingReturns` — units in the returns pipeline not yet reconciled into WMS.
+- `reconcileGap(item) = posQty - (quantity + pendingReturns)`. A non-zero gap flags the item as mismatched.
+
+**Updated acceptance criteria**
+- Given an item's POS/WMS/returns feeds disagree, then its row in the stock table shows a "⚠ Investigate" affordance in a new "Data check" column; given they agree, the row shows "✓ matched" instead.
+- Given "Investigate" is clicked, then a modal opens and animates through six stages in order — Supervisor Agent, System Mapper, Data Auditor, Stakeholder Synthesizer, Root Cause Investigator (RAG-backed), Solution Architect — each revealing its own output before the next begins.
+- Given the Root Cause Investigator stage runs, then it selects from a small static set of mock SOP/incident snippets by matching whether the gap is explained by pending returns (timing pattern) or not (sync/scan-failure pattern), and the Solution Architect stage recommends a corresponding concrete next action.
+- Given the modal is open, then a persistent caption reads *"Simulated pipeline — rule-based output for demo purposes, no live LLM calls"* — the investigation must never be presented as if it were live AI reasoning.
+
+**Technical notes**
+- Fully deterministic: every stage is a template string selected by simple rules over the mock feed data (`posQty`, `quantity`, `pendingReturns`) and a hardcoded `RAG_SNIPPETS` array — no network calls, no API keys, consistent with the demo's no-backend constraint.
+- Staging is done with sequential `setTimeout`s (~650ms apart) purely for animation pacing; there is no actual asynchronous work happening.
+- This amendment intentionally does not attempt to quantify the *real* source of mismatch across the client's actual systems — that discovery work (auditing real POS/WMS/returns data to find the biggest root cause) is a separate, prerequisite workstream before any real investigation agent would be justified.
